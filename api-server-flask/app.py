@@ -283,6 +283,39 @@ def login():
     except Exception as e:
         return jsonify({'error': 'Login failed'}), 500
 
+# Missing metrics endpoints - adding the remaining ones
+@app.route('/api/metrics/profit-margin', methods=['GET'])
+@admin_required
+def get_profit_margin():
+    try:
+        period, currency, timezone = validate_request_params(request)
+        
+        start_date, end_date = get_date_range(period, timezone)
+        
+        # Get profit margin data
+        data = execute_query_safely(lambda: db.session.query(
+            db.func.coalesce(db.func.sum(Order.profit), 0).label('total_profit'),
+            db.func.coalesce(db.func.sum(Order.charge), 0).label('total_revenue')
+        ).filter(
+            Order.created >= start_date,
+            Order.created <= end_date,
+            Order.status == 'completed'
+        ).first())
+        
+        if not data:
+            data = type('obj', (object,), {'total_profit': 0, 'total_revenue': 0})
+        
+        total_profit = safe_float(data.total_profit)
+        total_revenue = safe_float(data.total_revenue)
+        margin = (total_profit / total_revenue * 100) if total_revenue > 0 else 0
+        
+        return jsonify({
+            'margin': margin
+        })
+        
+    except Exception as e:
+        return jsonify({'error': 'Failed to fetch profit margin data'}), 500
+
 # Metrics endpoints
 @app.route('/api/metrics/deposits', methods=['GET'])
 @admin_required

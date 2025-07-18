@@ -51,7 +51,11 @@ const Navbar = ({ setSidebarOpen }) => {
     setSearchQuery(query)
     if (query.length > 2) {
       try {
-        const response = await axios.get(`/api/users/search?query=${encodeURIComponent(query)}`)
+        const response = await axios.get(`/api/users/search?query=${encodeURIComponent(query)}`, {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+          }
+        })
         setSearchResults(response.data)
         setShowSearchResults(true)
       } catch (error) {

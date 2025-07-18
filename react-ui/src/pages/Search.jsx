@@ -15,7 +15,11 @@ const Search = () => {
     if (query.length > 2) {
       setLoading(true)
       try {
-        const response = await axios.get(`/api/users/search?query=${encodeURIComponent(query)}`)
+        const response = await axios.get(`/api/users/search?query=${encodeURIComponent(query)}`, {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+          }
+        })
         setSearchResults(response.data)
       } catch (error) {
         console.error('Search error:', error)
@@ -30,7 +34,11 @@ const Search = () => {
 
   const handleUserClick = async (user) => {
     try {
-      const response = await axios.get(`/api/user/${user.id}/history`)
+      const response = await axios.get(`/api/user/${user.id}/history`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+        }
+      })
       setSelectedUser(response.data)
       setShowModal(true)
     } catch (error) {

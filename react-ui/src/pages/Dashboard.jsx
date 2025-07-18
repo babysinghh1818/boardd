@@ -110,8 +110,30 @@ const Dashboard = () => {
   }
 
   const exportDashboard = () => {
-    // Simple implementation - in production you'd use a proper PDF library
-    window.print()
+    // Export dashboard as PDF using browser print
+    const printWindow = window.open('', '_blank')
+    const dashboardContent = document.querySelector('.dashboard-content').innerHTML
+    
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Analytics Dashboard Export</title>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 20px; }
+            .grid { display: grid; gap: 20px; }
+            .card { border: 1px solid #ccc; padding: 15px; border-radius: 8px; }
+            @media print { body { margin: 0; } }
+          </style>
+        </head>
+        <body>
+          <h1>Analytics Dashboard - ${new Date().toLocaleDateString()}</h1>
+          ${dashboardContent}
+        </body>
+      </html>
+    `)
+    
+    printWindow.document.close()
+    printWindow.print()
   }
 
   if (loading) {
@@ -144,7 +166,7 @@ const Dashboard = () => {
 
   return (
     <motion.div 
-      className="space-y-6"
+      className="space-y-6 dashboard-content"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.5 }}
