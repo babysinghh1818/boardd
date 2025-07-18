@@ -286,7 +286,7 @@ def login():
 # Missing metrics endpoints - adding the remaining ones
 @app.route('/api/metrics/profit-margin', methods=['GET'])
 @admin_required
-def get_profit_margin():
+def get_profit_margin_metrics():
     try:
         period, currency, timezone = validate_request_params(request)
         
@@ -319,7 +319,7 @@ def get_profit_margin():
 # Metrics endpoints
 @app.route('/api/metrics/deposits', methods=['GET'])
 @admin_required
-def get_deposits():
+def get_deposits_metrics():
     try:
         period, currency, timezone = validate_request_params(request)
         
@@ -377,7 +377,7 @@ def get_deposits():
 
 @app.route('/api/metrics/sales', methods=['GET'])
 @admin_required
-def get_sales():
+def get_sales_metrics():
     try:
         period, currency, timezone = validate_request_params(request)
         
@@ -423,7 +423,7 @@ def get_sales():
 
 @app.route('/api/metrics/signups', methods=['GET'])
 @admin_required
-def get_signups():
+def get_signups_metrics():
     try:
         period, currency, timezone = validate_request_params(request)
         
@@ -459,7 +459,7 @@ def get_signups():
 
 @app.route('/api/metrics/signup-to-deposit', methods=['GET'])
 @admin_required
-def get_signup_to_deposit():
+def get_signup_to_deposit_metrics():
     try:
         period, currency, timezone = validate_request_params(request)
         
@@ -500,7 +500,7 @@ def get_signup_to_deposit():
 
 @app.route('/api/metrics/signup-to-order', methods=['GET'])
 @admin_required
-def get_signup_to_order():
+def get_signup_to_order_metrics():
     try:
         period, currency, timezone = validate_request_params(request)
         
@@ -539,7 +539,7 @@ def get_signup_to_order():
 
 @app.route('/api/metrics/revenue', methods=['GET'])
 @admin_required
-def get_revenue():
+def get_revenue_metrics():
     try:
         period, currency, timezone = validate_request_params(request)
         
@@ -612,7 +612,7 @@ def get_revenue():
 
 @app.route('/api/metrics/profit', methods=['GET'])
 @admin_required
-def get_profit():
+def get_profit_metrics():
     try:
         period, currency, timezone = validate_request_params(request)
         
@@ -669,41 +669,9 @@ def get_profit():
     except Exception as e:
         return jsonify({'error': 'Failed to fetch profit data'}), 500
 
-@app.route('/api/metrics/profit-margin', methods=['GET'])
-@admin_required
-def get_profit_margin():
-    try:
-        period, currency, timezone = validate_request_params(request)
-        
-        start_date, end_date = get_date_range(period, timezone)
-        
-        # Get profit margin data
-        data = execute_query_safely(lambda: db.session.query(
-            db.func.coalesce(db.func.sum(Order.profit), 0).label('total_profit'),
-            db.func.coalesce(db.func.sum(Order.charge), 0).label('total_revenue')
-        ).filter(
-            Order.created >= start_date,
-            Order.created <= end_date,
-            Order.status == 'completed'
-        ).first())
-        
-        if not data:
-            data = type('obj', (object,), {'total_profit': 0, 'total_revenue': 0})
-        
-        total_profit = safe_float(data.total_profit)
-        total_revenue = safe_float(data.total_revenue)
-        margin = (total_profit / total_revenue * 100) if total_revenue > 0 else 0
-        
-        return jsonify({
-            'margin': margin
-        })
-        
-    except Exception as e:
-        return jsonify({'error': 'Failed to fetch profit margin data'}), 500
-
 @app.route('/api/metrics/orders/count', methods=['GET'])
 @admin_required
-def get_orders_count():
+def get_orders_count_metrics():
     try:
         period, currency, timezone = validate_request_params(request)
         
@@ -739,7 +707,7 @@ def get_orders_count():
 
 @app.route('/api/metrics/orders/average-charge', methods=['GET'])
 @admin_required
-def get_average_charge():
+def get_orders_average_charge_metrics():
     try:
         period, currency, timezone = validate_request_params(request)
         
@@ -765,7 +733,7 @@ def get_average_charge():
 
 @app.route('/api/metrics/users/zero-balance', methods=['GET'])
 @admin_required
-def get_zero_balance_users():
+def get_users_zero_balance_metrics():
     try:
         count = execute_query_safely(lambda: db.session.query(
             db.func.count(GeneralUser.id).label('total')
@@ -783,7 +751,7 @@ def get_zero_balance_users():
 
 @app.route('/api/metrics/users/affiliate-positive', methods=['GET'])
 @admin_required
-def get_affiliate_positive_users():
+def get_users_affiliate_positive_metrics():
     try:
         count = execute_query_safely(lambda: db.session.query(
             db.func.count(GeneralUser.id).label('total')
@@ -801,7 +769,7 @@ def get_affiliate_positive_users():
 
 @app.route('/api/metrics/users/inactive', methods=['GET'])
 @admin_required
-def get_inactive_users():
+def get_users_inactive_metrics():
     try:
         # Users with no activity in last 30 days
         cutoff_date = datetime.utcnow() - timedelta(days=30)
@@ -825,7 +793,7 @@ def get_inactive_users():
 
 @app.route('/api/metrics/average-deposit', methods=['GET'])
 @admin_required
-def get_average_deposit():
+def get_average_deposit_metrics():
     try:
         period, currency, timezone = validate_request_params(request)
         
@@ -852,7 +820,7 @@ def get_average_deposit():
 
 @app.route('/api/metrics/top-customers', methods=['GET'])
 @admin_required
-def get_top_customers():
+def get_top_customers_metrics():
     try:
         period, currency, timezone = validate_request_params(request)
         
@@ -902,7 +870,7 @@ def get_top_customers():
 
 @app.route('/api/metrics/best-selling', methods=['GET'])
 @admin_required
-def get_best_selling():
+def get_best_selling_metrics():
     try:
         period, currency, timezone = validate_request_params(request)
         
@@ -948,7 +916,7 @@ def get_best_selling():
 
 @app.route('/api/metrics/rewards', methods=['GET'])
 @admin_required
-def get_rewards():
+def get_rewards_metrics():
     try:
         period, currency, timezone = validate_request_params(request)
         
@@ -981,7 +949,7 @@ def get_rewards():
 
 @app.route('/api/metrics/ltv', methods=['GET'])
 @admin_required
-def get_ltv():
+def get_ltv_metrics():
     try:
         period, currency, timezone = validate_request_params(request)
         
@@ -1018,7 +986,7 @@ def get_ltv():
 
 @app.route('/api/metrics/deposit-methods', methods=['GET'])
 @admin_required
-def get_deposit_methods():
+def get_deposit_methods_metrics():
     try:
         period, currency, timezone = validate_request_params(request)
         
@@ -1068,7 +1036,7 @@ def get_deposit_methods():
 
 @app.route('/api/metrics/orders/status-distribution', methods=['GET'])
 @admin_required
-def get_order_status_distribution():
+def get_orders_status_distribution_metrics():
     try:
         period, currency, timezone = validate_request_params(request)
         
@@ -1116,7 +1084,7 @@ def get_order_status_distribution():
 # User search and details
 @app.route('/api/users/search', methods=['GET'])
 @admin_required
-def search_users():
+def search_users_endpoint():
     try:
         query = request.args.get('query', '').strip()
         
@@ -1149,7 +1117,7 @@ def search_users():
 
 @app.route('/api/user/<int:user_id>/history', methods=['GET'])
 @admin_required
-def get_user_history(user_id):
+def get_user_history_endpoint(user_id):
     try:
         user = GeneralUser.query.get(user_id)
         if not user:
@@ -1237,7 +1205,7 @@ def get_user_history(user_id):
 # System notifications
 @app.route('/api/system/notifications', methods=['GET'])
 @admin_required
-def get_notifications():
+def get_system_notifications():
     try:
         # Mock notifications - in real app, these would come from database
         notifications = [
