@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { useSettings } from '../contexts/SettingsContext'
 import DateRangeFilter from '../components/DateRangeFilter'
 import KPICard from '../components/KPICard'
@@ -30,7 +31,7 @@ const Dashboard = () => {
     setLoading(true)
     try {
       // Load all metrics in parallel
-      const [
+      const promises = [
         depositsRes,
         salesRes,
         signupsRes,
@@ -50,7 +51,9 @@ const Dashboard = () => {
         bestSellingRes,
         depositMethodsRes,
         orderStatusRes
-      ] = await Promise.all([
+      ]
+      
+      const results = await Promise.allSettled([
         axios.get(`/api/metrics/deposits?period=${dateRange}&currency=${currency}&timezone=${timezone}`),
         axios.get(`/api/metrics/sales?period=${dateRange}&currency=${currency}&timezone=${timezone}`),
         axios.get(`/api/metrics/signups?period=${dateRange}&timezone=${timezone}`),
@@ -72,29 +75,52 @@ const Dashboard = () => {
         axios.get(`/api/metrics/orders/status-distribution?period=${dateRange}&timezone=${timezone}`)
       ])
 
+      // Handle results with error checking
+      const [
+        depositsRes,
+        salesRes,
+        signupsRes,
+        revenueRes,
+        profitRes,
+        ordersRes,
+        usersRes,
+        signupToDepositRes,
+        signupToOrderRes,
+        rewardsRes,
+        affiliateRes,
+        avgDepositRes,
+        avgChargeRes,
+        inactiveRes,
+        ltvRes,
+        topCustomersRes,
+        bestSellingRes,
+        depositMethodsRes,
+        orderStatusRes
+      ] = results.map(result => result.status === 'fulfilled' ? result.value : { data: {} })
+
       setMetrics({
-        deposits: depositsRes.data,
-        sales: salesRes.data,
-        signups: signupsRes.data,
-        revenue: revenueRes.data,
-        profit: profitRes.data,
-        orders: ordersRes.data,
-        users: usersRes.data,
-        signupToDeposit: signupToDepositRes.data,
-        signupToOrder: signupToOrderRes.data,
-        rewards: rewardsRes.data,
-        affiliate: affiliateRes.data,
-        avgDeposit: avgDepositRes.data,
-        avgCharge: avgChargeRes.data,
-        inactive: inactiveRes.data,
-        ltv: ltvRes.data
+        deposits: depositsRes.data || {},
+        sales: salesRes.data || {},
+        signups: signupsRes.data || {},
+        revenue: revenueRes.data || {},
+        profit: profitRes.data || {},
+        orders: ordersRes.data || {},
+        users: usersRes.data || {},
+        signupToDeposit: signupToDepositRes.data || {},
+        signupToOrder: signupToOrderRes.data || {},
+        rewards: rewardsRes.data || {},
+        affiliate: affiliateRes.data || {},
+        avgDeposit: avgDepositRes.data || {},
+        avgCharge: avgChargeRes.data || {},
+        inactive: inactiveRes.data || {},
+        ltv: ltvRes.data || {}
       })
 
       setChartData({
-        topCustomers: topCustomersRes.data,
-        bestSelling: bestSellingRes.data,
-        depositMethods: depositMethodsRes.data,
-        orderStatus: orderStatusRes.data
+        topCustomers: topCustomersRes.data || {},
+        bestSelling: bestSellingRes.data || {},
+        depositMethods: depositMethodsRes.data || {},
+        orderStatus: orderStatusRes.data || {}
       })
     } catch (error) {
       console.error('Error loading dashboard data:', error)
@@ -110,7 +136,12 @@ const Dashboard = () => {
 
   if (loading) {
     return (
-      <div className="space-y-6">
+      <motion.div 
+        className="space-y-6"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.3 }}
+      >
         <div className="flex justify-between items-center">
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Analytics Dashboard</h1>
           <LoadingSkeleton className="h-10 w-48" />
@@ -127,14 +158,24 @@ const Dashboard = () => {
             <LoadingSkeleton key={i} className="h-80" />
           ))}
         </div>
-      </div>
+      </motion.div>
     )
   }
 
   return (
-    <div className="space-y-6">
+    <motion.div 
+      className="space-y-6"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.5 }}
+    >
       {/* Header */}
-      <div className="flex justify-between items-center">
+      <motion.div 
+        className="flex justify-between items-center"
+        initial={{ y: -20, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ duration: 0.5 }}
+      >
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Analytics Dashboard</h1>
           <p className="text-sm text-gray-500 dark:text-gray-400">
@@ -143,18 +184,25 @@ const Dashboard = () => {
         </div>
         <div className="flex space-x-3">
           <DateRangeFilter />
-          <button
+          <motion.button
             onClick={exportDashboard}
             className="btn-secondary"
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
           >
             Export PDF
-          </button>
+          </motion.button>
         </div>
-      </div>
+      </motion.div>
 
       {/* Primary KPI Cards */}
-      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-        <KPICard
+      <motion.div 
+        className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.2, duration: 0.5 }}
+      >
+        <motion.div key="revenue-card"><KPICard
           title="Total Revenue"
           value={metrics.revenue?.total || 0}
           change={metrics.revenue?.change || 0}
@@ -162,8 +210,8 @@ const Dashboard = () => {
           color="green"
           currency={currency}
           tooltip="Total revenue from completed orders"
-        />
-        <KPICard
+        /></motion.div>
+        <motion.div key="deposits-card"><KPICard
           title="Total Deposits"
           value={metrics.deposits?.total || 0}
           change={metrics.deposits?.change || 0}
@@ -171,28 +219,28 @@ const Dashboard = () => {
           color="blue"
           currency={currency}
           tooltip="Total deposits excluding bonuses"
-        />
-        <KPICard
+        /></motion.div>
+        <motion.div key="orders-card"><KPICard
           title="Total Orders"
           value={metrics.orders?.total || 0}
           change={metrics.orders?.change || 0}
           icon={ShoppingCartIcon}
           color="purple"
           tooltip="Total number of orders placed"
-        />
-        <KPICard
+        /></motion.div>
+        <motion.div key="signups-card"><KPICard
           title="New Signups"
           value={metrics.signups?.total || 0}
           change={metrics.signups?.change || 0}
           icon={UserGroupIcon}
           color="indigo"
           tooltip="New user registrations"
-        />
-      </div>
+        /></motion.div>
+      </motion.div>
 
       {/* Secondary KPI Cards */}
-      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-        <KPICard
+      <motion.div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+        <motion.div key="profit-card"><KPICard
           title="Total Profit"
           value={metrics.profit?.total || 0}
           change={metrics.profit?.change || 0}
@@ -200,8 +248,8 @@ const Dashboard = () => {
           color="emerald"
           currency={currency}
           tooltip="Total profit from completed orders"
-        />
-        <KPICard
+        /></motion.div>
+        <motion.div key="margin-card"><KPICard
           title="Profit Margin"
           value={metrics.profit?.margin || 0}
           change={metrics.profit?.marginChange || 0}
@@ -209,85 +257,90 @@ const Dashboard = () => {
           color="yellow"
           suffix="%"
           tooltip="Profit margin percentage"
-        />
-        <KPICard
+        /></motion.div>
+        <motion.div key="rewards-card"><KPICard
           title="Rewards Paid"
           value={metrics.rewards?.total || 0}
           icon={GiftIcon}
           color="pink"
           currency={currency}
           tooltip="Total bonus/reward payments"
-        />
-        <KPICard
+        /></motion.div>
+        <motion.div key="ltv-card"><KPICard
           title="Customer LTV"
           value={metrics.ltv?.ltv || 0}
           icon={CurrencyDollarIcon}
           color="cyan"
           currency={currency}
           tooltip="Average customer lifetime value"
-        />
-      </div>
+        /></motion.div>
+      </motion.div>
 
       {/* Conversion & User Metrics */}
-      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-        <KPICard
+      <motion.div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+        <motion.div key="signup-deposit-card"><KPICard
           title="Signup to Deposit"
           value={metrics.signupToDeposit?.conversion_rate || 0}
           icon={ChartBarIcon}
           color="blue"
           suffix="%"
           tooltip="Percentage of signups who made deposits"
-        />
-        <KPICard
+        /></motion.div>
+        <motion.div key="signup-order-card"><KPICard
           title="Signup to Order"
           value={metrics.signupToOrder?.conversion_rate || 0}
           icon={ChartBarIcon}
           color="green"
           suffix="%"
           tooltip="Percentage of signups who placed orders"
-        />
-        <KPICard
+        /></motion.div>
+        <motion.div key="zero-balance-card"><KPICard
           title="Zero Balance Users"
           value={metrics.users?.zeroBalance || 0}
           icon={UsersIcon}
           color="red"
           tooltip="Users with zero account balance"
-        />
-        <KPICard
+        /></motion.div>
+        <motion.div key="affiliate-card"><KPICard
           title="Affiliate Earners"
           value={metrics.affiliate?.affiliatePositive || 0}
           icon={UsersIcon}
           color="purple"
           tooltip="Users with positive affiliate balance"
-        />
-      </div>
+        /></motion.div>
+      </motion.div>
 
       {/* Average Metrics */}
-      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-        <KPICard
+      <motion.div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+        <motion.div key="avg-deposit-card"><KPICard
           title="Avg Deposit"
           value={metrics.avgDeposit?.average || 0}
           icon={BanknotesIcon}
           color="blue"
           currency={currency}
           tooltip="Average deposit amount"
-        />
-        <KPICard
+        /></motion.div>
+        <motion.div key="avg-order-card"><KPICard
           title="Avg Order Value"
           value={metrics.avgCharge?.average || 0}
           icon={ShoppingCartIcon}
           color="green"
           currency={currency}
           tooltip="Average order charge amount"
-        />
-        <KPICard
+        /></motion.div>
+        <motion.div key="inactive-card"><KPICard
           title="Inactive Users"
           value={metrics.inactive?.inactive || 0}
           icon={UsersIcon}
           color="gray"
           tooltip="Users inactive for 30+ days"
-        />
-        <div className="card p-6">
+        /></motion.div>
+        <motion.div 
+          className="card p-6"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+        >
           <div className="text-center">
             <div className="text-2xl font-bold text-gray-900 dark:text-white">
               {metrics.deposits?.count || 0}
@@ -296,51 +349,51 @@ const Dashboard = () => {
               Total Deposits Count
             </div>
           </div>
-        </div>
-      </div>
+        </motion.div>
+      </motion.div>
 
       {/* Charts */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <ChartCard
+      <motion.div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <motion.div key="revenue-chart"><ChartCard
           title="Revenue Trend"
           data={metrics.revenue?.chartData}
           type="line"
           currency={currency}
-        />
-        <ChartCard
+        /></motion.div>
+        <motion.div key="deposit-methods-chart"><ChartCard
           title="Deposit Methods"
           data={chartData.depositMethods}
           type="doughnut"
           currency={currency}
-        />
-        <ChartCard
+        /></motion.div>
+        <motion.div key="top-customers-chart"><ChartCard
           title="Top Customers"
           data={chartData.topCustomers}
           type="bar"
           currency={currency}
-        />
-        <ChartCard
+        /></motion.div>
+        <motion.div key="order-status-chart"><ChartCard
           title="Order Status Distribution"
           data={chartData.orderStatus}
           type="doughnut"
-        />
-      </div>
+        /></motion.div>
+      </motion.div>
 
       {/* Additional Charts */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <ChartCard
+      <motion.div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <motion.div key="best-selling-chart"><ChartCard
           title="Best Selling Services"
           data={chartData.bestSelling}
           type="bar"
-        />
-        <ChartCard
+        /></motion.div>
+        <motion.div key="deposits-comparison-chart"><ChartCard
           title="Deposits vs Previous Period"
           data={metrics.deposits?.chartData}
           type="bar"
           currency={currency}
-        />
-      </div>
-    </div>
+        /></motion.div>
+      </motion.div>
+    </motion.div>
   )
 }
 

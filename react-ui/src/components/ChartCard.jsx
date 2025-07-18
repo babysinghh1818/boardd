@@ -1,4 +1,5 @@
 import React from 'react'
+import { motion } from 'framer-motion'
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -150,31 +151,47 @@ const ChartCard = ({ title, data, type = 'line', currency, height = 300 }) => {
   }
 
   return (
-    <div className="card p-6">
+    <motion.div 
+      className="card p-6"
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ duration: 0.5, ease: "easeOut" }}
+      whileHover={{ y: -4 }}
+    >
       <div className="flex justify-between items-center mb-4">
         <h3 className="text-lg font-medium text-gray-900 dark:text-white">{title}</h3>
         <div className="flex space-x-2">
-          <button
+          <motion.button
             onClick={exportAsCSV}
             className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
             title="Export as CSV"
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.95 }}
           >
             <DocumentArrowDownIcon className="h-5 w-5" />
-          </button>
-          <button
+          </motion.button>
+          <motion.button
             onClick={exportAsPNG}
             className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
             title="Export as PNG"
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.95 }}
           >
             <ArrowDownTrayIcon className="h-5 w-5" />
-          </button>
+          </motion.button>
         </div>
       </div>
       
-      <div id={`chart-${title.replace(/\s+/g, '-').toLowerCase()}`} style={{ height: `${height}px` }}>
+      <motion.div 
+        id={`chart-${title.replace(/\s+/g, '-').toLowerCase()}`} 
+        style={{ height: `${height}px` }}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.3, duration: 0.5 }}
+      >
         {renderChart()}
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   )
 }
 

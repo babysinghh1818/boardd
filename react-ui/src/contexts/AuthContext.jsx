@@ -54,8 +54,9 @@ export const AuthProvider = ({ children }) => {
       toast.success('Login successful!')
       return { success: true }
     } catch (error) {
-      const message = error.response?.data?.error || 'Login failed'
+      const message = error.response?.data?.error || error.message || 'Login failed'
       toast.error(message)
+      console.error('Login error:', error)
       return { success: false, error: message }
     }
   }

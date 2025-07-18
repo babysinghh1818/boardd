@@ -1,4 +1,5 @@
 import React from 'react'
+import { motion } from 'framer-motion'
 
 const LoadingSkeleton = ({ className = '', width, height }) => {
   const baseClasses = 'animate-pulse bg-gray-200 dark:bg-gray-700 rounded'
@@ -8,9 +9,12 @@ const LoadingSkeleton = ({ className = '', width, height }) => {
   if (height) style.height = height
 
   return (
-    <div 
+    <motion.div 
       className={`${baseClasses} ${className}`}
       style={style}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.3 }}
     />
   )
 }

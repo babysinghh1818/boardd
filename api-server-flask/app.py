@@ -119,23 +119,74 @@ class Order(db.Model):
 # Helper functions
 def get_date_range(period, timezone='UTC'):
     """Get start and end dates based on period"""
-    now = datetime.utcnow()
-    
-    if period == 'daily':
-        start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        end_date = now
-    elif period == 'weekly':
-        start_date = now - timedelta(days=7)
-        end_date = now
-    elif period == 'monthly':
-        start_date = now - timedelta(days=30)
-        end_date = now
-    else:  # custom or default to weekly
-        start_date = now - timedelta(days=7)
-        end_date = now
-    
-    return start_date, end_date
+    try:
+        now = datetime.utcnow()
+        
+        if period == 'daily':
+            start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            end_date = now
+        elif period == 'weekly':
+            start_date = now - timedelta(days=7)
+            end_date = now
+        elif period == 'monthly':
+            start_date = now - timedelta(days=30)
+            end_date = now
+        else:  # custom or default to weekly
+            start_date = now - timedelta(days=7)
+            end_date = now
+        
+        return start_date, end_date
+    except Exception:
+        # Fallback to weekly if any error
+        now = datetime.utcnow()
+        return now - timedelta(days=7), now
 
+def safe_float(value, default=0.0):
+    """Safely convert value to float"""
+    try:
+        if value is None:
+            return default
+        return float(value)
+    except (ValueError, TypeError):
+        return default
+
+def safe_int(value, default=0):
+    """Safely convert value to int"""
+    try:
+        if value is None:
+            return default
+        return int(value)
+    except (ValueError, TypeError):
+        return default
+
+def validate_request_params(request):
+    """Validate and sanitize request parameters"""
+    try:
+        period = request.args.get('period', 'weekly')
+        if period not in ['daily', 'weekly', 'monthly', 'custom']:
+            period = 'weekly'
+        
+        currency = request.args.get('currency', 'USD')
+        if not currency or len(currency) != 3:
+            currency = 'USD'
+        
+        timezone = request.args.get('timezone', 'UTC')
+        if not timezone:
+            timezone = 'UTC'
+        
+        return period, currency, timezone
+    except Exception:
+        return 'weekly', 'USD', 'UTC'
+
+def execute_query_safely(query_func, default_result=None):
+    """Execute database query with error handling"""
+    try:
+        result = query_func()
+        return result if result is not None else default_result
+    except Exception as e:
+        print(f"Database query error: {e}")
+        return default_result
+    
 def convert_currency(amount, from_currency='USD', to_currency='USD'):
     """Convert currency using exchange rate API with caching"""
     global exchange_rate_cache, cache_timestamp
@@ -233,43 +284,44 @@ def login():
 @admin_required
 def get_deposits():
     try:
-        period = request.args.get('period', 'weekly')
-        currency = request.args.get('currency', 'USD')
-        timezone = request.args.get('timezone', 'UTC')
+        period, currency, timezone = validate_request_params(request)
         
         start_date, end_date = get_date_range(period, timezone)
         
         # Get deposits (non-bonus transactions)
-        deposits = db.session.query(
-            db.func.sum(GeneralTransactionLog.amount).label('total'),
+        deposits = execute_query_safely(lambda: db.session.query(
+            db.func.coalesce(db.func.sum(GeneralTransactionLog.amount), 0).label('total'),
             db.func.count(GeneralTransactionLog.id).label('count')
         ).filter(
             GeneralTransactionLog.created >= start_date,
             GeneralTransactionLog.created <= end_date,
             GeneralTransactionLog.type != 'bonus',
             GeneralTransactionLog.status == 1
-        ).first()
+        ).first())
         
-        total = float(deposits.total or 0)
+        if not deposits:
+            deposits = type('obj', (object,), {'total': 0, 'count': 0})
+        
+        total = safe_float(deposits.total)
         total_converted = convert_currency(total, 'USD', currency)
         
         # Get previous period for comparison
         prev_start = start_date - (end_date - start_date)
-        prev_deposits = db.session.query(
-            db.func.sum(GeneralTransactionLog.amount).label('total')
+        prev_deposits = execute_query_safely(lambda: db.session.query(
+            db.func.coalesce(db.func.sum(GeneralTransactionLog.amount), 0).label('total')
         ).filter(
             GeneralTransactionLog.created >= prev_start,
             GeneralTransactionLog.created < start_date,
             GeneralTransactionLog.type != 'bonus',
             GeneralTransactionLog.status == 1
-        ).first()
+        ).first())
         
-        prev_total = float(prev_deposits.total or 0)
+        prev_total = safe_float(prev_deposits.total if prev_deposits else 0)
         change = ((total - prev_total) / prev_total * 100) if prev_total > 0 else 0
         
         return jsonify({
             'total': total_converted,
-            'count': deposits.count or 0,
+            'count': safe_int(deposits.count),
             'change': change,
             'chartData': {
                 'labels': ['Previous Period', 'Current Period'],
@@ -284,80 +336,80 @@ def get_deposits():
         })
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Failed to fetch deposits data', 'details': str(e)}), 500
 
 @app.route('/api/metrics/sales', methods=['GET'])
 @admin_required
 def get_sales():
     try:
-        period = request.args.get('period', 'weekly')
-        currency = request.args.get('currency', 'USD')
-        timezone = request.args.get('timezone', 'UTC')
+        period, currency, timezone = validate_request_params(request)
         
         start_date, end_date = get_date_range(period, timezone)
         
         # Get completed orders
-        sales = db.session.query(
-            db.func.sum(Order.charge).label('total'),
+        sales = execute_query_safely(lambda: db.session.query(
+            db.func.coalesce(db.func.sum(Order.charge), 0).label('total'),
             db.func.count(Order.id).label('count')
         ).filter(
             Order.created >= start_date,
             Order.created <= end_date,
             Order.status == 'completed'
-        ).first()
+        ).first())
         
-        total = float(sales.total or 0)
+        if not sales:
+            sales = type('obj', (object,), {'total': 0, 'count': 0})
+        
+        total = safe_float(sales.total)
         total_converted = convert_currency(total, 'USD', currency)
         
         # Get previous period for comparison
         prev_start = start_date - (end_date - start_date)
-        prev_sales = db.session.query(
-            db.func.sum(Order.charge).label('total')
+        prev_sales = execute_query_safely(lambda: db.session.query(
+            db.func.coalesce(db.func.sum(Order.charge), 0).label('total')
         ).filter(
             Order.created >= prev_start,
             Order.created < start_date,
             Order.status == 'completed'
-        ).first()
+        ).first())
         
-        prev_total = float(prev_sales.total or 0)
+        prev_total = safe_float(prev_sales.total if prev_sales else 0)
         change = ((total - prev_total) / prev_total * 100) if prev_total > 0 else 0
         
         return jsonify({
             'total': total_converted,
-            'count': sales.count or 0,
+            'count': safe_int(sales.count),
             'change': change
         })
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Failed to fetch sales data', 'details': str(e)}), 500
 
 @app.route('/api/metrics/signups', methods=['GET'])
 @admin_required
 def get_signups():
     try:
-        period = request.args.get('period', 'weekly')
-        timezone = request.args.get('timezone', 'UTC')
+        period, currency, timezone = validate_request_params(request)
         
         start_date, end_date = get_date_range(period, timezone)
         
-        signups = db.session.query(
+        signups = execute_query_safely(lambda: db.session.query(
             db.func.count(GeneralUser.id).label('total')
         ).filter(
             GeneralUser.created >= start_date,
             GeneralUser.created <= end_date
-        ).first()
+        ).first())
         
         # Get previous period for comparison
         prev_start = start_date - (end_date - start_date)
-        prev_signups = db.session.query(
+        prev_signups = execute_query_safely(lambda: db.session.query(
             db.func.count(GeneralUser.id).label('total')
         ).filter(
             GeneralUser.created >= prev_start,
             GeneralUser.created < start_date
-        ).first()
+        ).first())
         
-        total = signups.total or 0
-        prev_total = prev_signups.total or 0
+        total = safe_int(signups.total if signups else 0)
+        prev_total = safe_int(prev_signups.total if prev_signups else 0)
         change = ((total - prev_total) / prev_total * 100) if prev_total > 0 else 0
         
         return jsonify({
@@ -366,33 +418,38 @@ def get_signups():
         })
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Failed to fetch signups data', 'details': str(e)}), 500
 
 @app.route('/api/metrics/signup-to-deposit', methods=['GET'])
 @admin_required
 def get_signup_to_deposit():
     try:
-        period = request.args.get('period', 'weekly')
-        timezone = request.args.get('timezone', 'UTC')
+        period, currency, timezone = validate_request_params(request)
         
         start_date, end_date = get_date_range(period, timezone)
         
         # Users who signed up in period
-        signups = db.session.query(db.func.count(GeneralUser.id)).filter(
+        signups = execute_query_safely(lambda: db.session.query(
+            db.func.count(GeneralUser.id)
+        ).filter(
             GeneralUser.created >= start_date,
             GeneralUser.created <= end_date
-        ).scalar() or 0
+        ).scalar(), 0)
         
         # Users who signed up and made deposits
-        depositors = db.session.query(db.func.count(db.distinct(GeneralTransactionLog.uid))).join(
+        depositors = execute_query_safely(lambda: db.session.query(
+            db.func.count(db.distinct(GeneralTransactionLog.uid))
+        ).join(
             GeneralUser, GeneralTransactionLog.uid == GeneralUser.id
         ).filter(
             GeneralUser.created >= start_date,
             GeneralUser.created <= end_date,
             GeneralTransactionLog.type != 'bonus',
             GeneralTransactionLog.status == 1
-        ).scalar() or 0
+        ).scalar(), 0)
         
+        signups = safe_int(signups)
+        depositors = safe_int(depositors)
         conversion_rate = (depositors / signups * 100) if signups > 0 else 0
         
         return jsonify({
@@ -402,31 +459,36 @@ def get_signup_to_deposit():
         })
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Failed to fetch signup-to-deposit data', 'details': str(e)}), 500
 
 @app.route('/api/metrics/signup-to-order', methods=['GET'])
 @admin_required
 def get_signup_to_order():
     try:
-        period = request.args.get('period', 'weekly')
-        timezone = request.args.get('timezone', 'UTC')
+        period, currency, timezone = validate_request_params(request)
         
         start_date, end_date = get_date_range(period, timezone)
         
         # Users who signed up in period
-        signups = db.session.query(db.func.count(GeneralUser.id)).filter(
+        signups = execute_query_safely(lambda: db.session.query(
+            db.func.count(GeneralUser.id)
+        ).filter(
             GeneralUser.created >= start_date,
             GeneralUser.created <= end_date
-        ).scalar() or 0
+        ).scalar(), 0)
         
         # Users who signed up and placed orders
-        orderers = db.session.query(db.func.count(db.distinct(db.cast(Order.uid, db.Integer)))).join(
+        orderers = execute_query_safely(lambda: db.session.query(
+            db.func.count(db.distinct(db.cast(Order.uid, db.Integer)))
+        ).join(
             GeneralUser, db.cast(Order.uid, db.Integer) == GeneralUser.id
         ).filter(
             GeneralUser.created >= start_date,
             GeneralUser.created <= end_date
-        ).scalar() or 0
+        ).scalar(), 0)
         
+        signups = safe_int(signups)
+        orderers = safe_int(orderers)
         conversion_rate = (orderers / signups * 100) if signups > 0 else 0
         
         return jsonify({
@@ -436,41 +498,39 @@ def get_signup_to_order():
         })
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Failed to fetch signup-to-order data', 'details': str(e)}), 500
 
 @app.route('/api/metrics/revenue', methods=['GET'])
 @admin_required
 def get_revenue():
     try:
-        period = request.args.get('period', 'weekly')
-        currency = request.args.get('currency', 'USD')
-        timezone = request.args.get('timezone', 'UTC')
+        period, currency, timezone = validate_request_params(request)
         
         start_date, end_date = get_date_range(period, timezone)
         
         # Revenue from completed orders
-        revenue = db.session.query(
-            db.func.sum(Order.charge).label('total')
+        revenue = execute_query_safely(lambda: db.session.query(
+            db.func.coalesce(db.func.sum(Order.charge), 0).label('total')
         ).filter(
             Order.created >= start_date,
             Order.created <= end_date,
             Order.status == 'completed'
-        ).first()
+        ).first())
         
-        total = float(revenue.total or 0)
+        total = safe_float(revenue.total if revenue else 0)
         total_converted = convert_currency(total, 'USD', currency)
         
         # Get previous period for comparison
         prev_start = start_date - (end_date - start_date)
-        prev_revenue = db.session.query(
-            db.func.sum(Order.charge).label('total')
+        prev_revenue = execute_query_safely(lambda: db.session.query(
+            db.func.coalesce(db.func.sum(Order.charge), 0).label('total')
         ).filter(
             Order.created >= prev_start,
             Order.created < start_date,
             Order.status == 'completed'
-        ).first()
+        ).first())
         
-        prev_total = float(prev_revenue.total or 0)
+        prev_total = safe_float(prev_revenue.total if prev_revenue else 0)
         change = ((total - prev_total) / prev_total * 100) if prev_total > 0 else 0
         
         # Generate chart data for trend
@@ -490,17 +550,17 @@ def get_revenue():
         current_date = start_date
         while current_date <= end_date:
             next_date = current_date + timedelta(days=1)
-            daily_revenue = db.session.query(
-                db.func.sum(Order.charge).label('total')
+            daily_revenue = execute_query_safely(lambda: db.session.query(
+                db.func.coalesce(db.func.sum(Order.charge), 0).label('total')
             ).filter(
                 Order.created >= current_date,
                 Order.created < next_date,
                 Order.status == 'completed'
-            ).first()
+            ).first())
             
             chart_data['labels'].append(current_date.strftime('%m/%d'))
             chart_data['datasets'][0]['data'].append(
-                convert_currency(float(daily_revenue.total or 0), 'USD', currency)
+                convert_currency(safe_float(daily_revenue.total if daily_revenue else 0), 'USD', currency)
             )
             current_date = next_date
         
@@ -511,30 +571,31 @@ def get_revenue():
         })
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Failed to fetch revenue data', 'details': str(e)}), 500
 
 @app.route('/api/metrics/profit', methods=['GET'])
 @admin_required
 def get_profit():
     try:
-        period = request.args.get('period', 'weekly')
-        currency = request.args.get('currency', 'USD')
-        timezone = request.args.get('timezone', 'UTC')
+        period, currency, timezone = validate_request_params(request)
         
         start_date, end_date = get_date_range(period, timezone)
         
         # Profit from completed orders
-        profit_data = db.session.query(
-            db.func.sum(Order.profit).label('total_profit'),
-            db.func.sum(Order.charge).label('total_revenue')
+        profit_data = execute_query_safely(lambda: db.session.query(
+            db.func.coalesce(db.func.sum(Order.profit), 0).label('total_profit'),
+            db.func.coalesce(db.func.sum(Order.charge), 0).label('total_revenue')
         ).filter(
             Order.created >= start_date,
             Order.created <= end_date,
             Order.status == 'completed'
-        ).first()
+        ).first())
         
-        total_profit = float(profit_data.total_profit or 0)
-        total_revenue = float(profit_data.total_revenue or 0)
+        if not profit_data:
+            profit_data = type('obj', (object,), {'total_profit': 0, 'total_revenue': 0})
+        
+        total_profit = safe_float(profit_data.total_profit)
+        total_revenue = safe_float(profit_data.total_revenue)
         profit_converted = convert_currency(total_profit, 'USD', currency)
         
         # Calculate profit margin
@@ -542,17 +603,20 @@ def get_profit():
         
         # Get previous period for comparison
         prev_start = start_date - (end_date - start_date)
-        prev_profit_data = db.session.query(
-            db.func.sum(Order.profit).label('total_profit'),
-            db.func.sum(Order.charge).label('total_revenue')
+        prev_profit_data = execute_query_safely(lambda: db.session.query(
+            db.func.coalesce(db.func.sum(Order.profit), 0).label('total_profit'),
+            db.func.coalesce(db.func.sum(Order.charge), 0).label('total_revenue')
         ).filter(
             Order.created >= prev_start,
             Order.created < start_date,
             Order.status == 'completed'
-        ).first()
+        ).first())
         
-        prev_profit = float(prev_profit_data.total_profit or 0)
-        prev_revenue = float(prev_profit_data.total_revenue or 0)
+        if not prev_profit_data:
+            prev_profit_data = type('obj', (object,), {'total_profit': 0, 'total_revenue': 0})
+        
+        prev_profit = safe_float(prev_profit_data.total_profit)
+        prev_revenue = safe_float(prev_profit_data.total_revenue)
         prev_margin = (prev_profit / prev_revenue * 100) if prev_revenue > 0 else 0
         
         change = ((total_profit - prev_profit) / prev_profit * 100) if prev_profit > 0 else 0
@@ -566,29 +630,31 @@ def get_profit():
         })
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Failed to fetch profit data', 'details': str(e)}), 500
 
 @app.route('/api/metrics/profit-margin', methods=['GET'])
 @admin_required
 def get_profit_margin():
     try:
-        period = request.args.get('period', 'weekly')
-        timezone = request.args.get('timezone', 'UTC')
+        period, currency, timezone = validate_request_params(request)
         
         start_date, end_date = get_date_range(period, timezone)
         
         # Get profit margin data
-        data = db.session.query(
-            db.func.sum(Order.profit).label('total_profit'),
-            db.func.sum(Order.charge).label('total_revenue')
+        data = execute_query_safely(lambda: db.session.query(
+            db.func.coalesce(db.func.sum(Order.profit), 0).label('total_profit'),
+            db.func.coalesce(db.func.sum(Order.charge), 0).label('total_revenue')
         ).filter(
             Order.created >= start_date,
             Order.created <= end_date,
             Order.status == 'completed'
-        ).first()
+        ).first())
         
-        total_profit = float(data.total_profit or 0)
-        total_revenue = float(data.total_revenue or 0)
+        if not data:
+            data = type('obj', (object,), {'total_profit': 0, 'total_revenue': 0})
+        
+        total_profit = safe_float(data.total_profit)
+        total_revenue = safe_float(data.total_revenue)
         margin = (total_profit / total_revenue * 100) if total_revenue > 0 else 0
         
         return jsonify({
@@ -596,35 +662,34 @@ def get_profit_margin():
         })
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Failed to fetch profit margin data', 'details': str(e)}), 500
 
 @app.route('/api/metrics/orders/count', methods=['GET'])
 @admin_required
 def get_orders_count():
     try:
-        period = request.args.get('period', 'weekly')
-        timezone = request.args.get('timezone', 'UTC')
+        period, currency, timezone = validate_request_params(request)
         
         start_date, end_date = get_date_range(period, timezone)
         
-        orders = db.session.query(
+        orders = execute_query_safely(lambda: db.session.query(
             db.func.count(Order.id).label('total')
         ).filter(
             Order.created >= start_date,
             Order.created <= end_date
-        ).first()
+        ).first())
         
         # Get previous period for comparison
         prev_start = start_date - (end_date - start_date)
-        prev_orders = db.session.query(
+        prev_orders = execute_query_safely(lambda: db.session.query(
             db.func.count(Order.id).label('total')
         ).filter(
             Order.created >= prev_start,
             Order.created < start_date
-        ).first()
+        ).first())
         
-        total = orders.total or 0
-        prev_total = prev_orders.total or 0
+        total = safe_int(orders.total if orders else 0)
+        prev_total = safe_int(prev_orders.total if prev_orders else 0)
         change = ((total - prev_total) / prev_total * 100) if prev_total > 0 else 0
         
         return jsonify({
@@ -633,27 +698,25 @@ def get_orders_count():
         })
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Failed to fetch orders count data', 'details': str(e)}), 500
 
 @app.route('/api/metrics/orders/average-charge', methods=['GET'])
 @admin_required
 def get_average_charge():
     try:
-        period = request.args.get('period', 'weekly')
-        currency = request.args.get('currency', 'USD')
-        timezone = request.args.get('timezone', 'UTC')
+        period, currency, timezone = validate_request_params(request)
         
         start_date, end_date = get_date_range(period, timezone)
         
-        avg_charge = db.session.query(
-            db.func.avg(Order.charge).label('average')
+        avg_charge = execute_query_safely(lambda: db.session.query(
+            db.func.coalesce(db.func.avg(Order.charge), 0).label('average')
         ).filter(
             Order.created >= start_date,
             Order.created <= end_date,
             Order.status == 'completed'
-        ).first()
+        ).first())
         
-        average = float(avg_charge.average or 0)
+        average = safe_float(avg_charge.average if avg_charge else 0)
         average_converted = convert_currency(average, 'USD', currency)
         
         return jsonify({
@@ -661,43 +724,43 @@ def get_average_charge():
         })
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Failed to fetch average charge data', 'details': str(e)}), 500
 
 @app.route('/api/metrics/users/zero-balance', methods=['GET'])
 @admin_required
 def get_zero_balance_users():
     try:
-        count = db.session.query(
+        count = execute_query_safely(lambda: db.session.query(
             db.func.count(GeneralUser.id).label('total')
         ).filter(
             GeneralUser.balance == 0,
             GeneralUser.status == 1
-        ).first()
+        ).first())
         
         return jsonify({
-            'zeroBalance': count.total or 0
+            'zeroBalance': safe_int(count.total if count else 0)
         })
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Failed to fetch zero balance users data', 'details': str(e)}), 500
 
 @app.route('/api/metrics/users/affiliate-positive', methods=['GET'])
 @admin_required
 def get_affiliate_positive_users():
     try:
-        count = db.session.query(
+        count = execute_query_safely(lambda: db.session.query(
             db.func.count(GeneralUser.id).label('total')
         ).filter(
             GeneralUser.affiliate_bal_available > 0,
             GeneralUser.status == 1
-        ).first()
+        ).first())
         
         return jsonify({
-            'affiliatePositive': count.total or 0
+            'affiliatePositive': safe_int(count.total if count else 0)
         })
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Failed to fetch affiliate positive users data', 'details': str(e)}), 500
 
 @app.route('/api/metrics/users/inactive', methods=['GET'])
 @admin_required
@@ -706,7 +769,7 @@ def get_inactive_users():
         # Users with no activity in last 30 days
         cutoff_date = datetime.utcnow() - timedelta(days=30)
         
-        inactive_count = db.session.query(
+        inactive_count = execute_query_safely(lambda: db.session.query(
             db.func.count(GeneralUser.id).label('total')
         ).filter(
             db.or_(
@@ -714,35 +777,33 @@ def get_inactive_users():
                 GeneralUser.changed.is_(None)
             ),
             GeneralUser.status == 1
-        ).first()
+        ).first())
         
         return jsonify({
-            'inactive': inactive_count.total or 0
+            'inactive': safe_int(inactive_count.total if inactive_count else 0)
         })
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Failed to fetch inactive users data', 'details': str(e)}), 500
 
 @app.route('/api/metrics/average-deposit', methods=['GET'])
 @admin_required
 def get_average_deposit():
     try:
-        period = request.args.get('period', 'weekly')
-        currency = request.args.get('currency', 'USD')
-        timezone = request.args.get('timezone', 'UTC')
+        period, currency, timezone = validate_request_params(request)
         
         start_date, end_date = get_date_range(period, timezone)
         
-        avg_deposit = db.session.query(
-            db.func.avg(GeneralTransactionLog.amount).label('average')
+        avg_deposit = execute_query_safely(lambda: db.session.query(
+            db.func.coalesce(db.func.avg(GeneralTransactionLog.amount), 0).label('average')
         ).filter(
             GeneralTransactionLog.created >= start_date,
             GeneralTransactionLog.created <= end_date,
             GeneralTransactionLog.type != 'bonus',
             GeneralTransactionLog.status == 1
-        ).first()
+        ).first())
         
-        average = float(avg_deposit.average or 0)
+        average = safe_float(avg_deposit.average if avg_deposit else 0)
         average_converted = convert_currency(average, 'USD', currency)
         
         return jsonify({
@@ -750,23 +811,21 @@ def get_average_deposit():
         })
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Failed to fetch average deposit data', 'details': str(e)}), 500
 
 @app.route('/api/metrics/top-customers', methods=['GET'])
 @admin_required
 def get_top_customers():
     try:
-        period = request.args.get('period', 'weekly')
-        currency = request.args.get('currency', 'USD')
-        timezone = request.args.get('timezone', 'UTC')
+        period, currency, timezone = validate_request_params(request)
         
         start_date, end_date = get_date_range(period, timezone)
         
         # Get top customers by total spent
-        top_customers = db.session.query(
+        top_customers = execute_query_safely(lambda: db.session.query(
             GeneralUser.first_name,
             GeneralUser.last_name,
-            db.func.sum(Order.charge).label('total_spent'),
+            db.func.coalesce(db.func.sum(Order.charge), 0).label('total_spent'),
             db.func.count(Order.id).label('order_count')
         ).join(
             Order, db.cast(Order.uid, db.Integer) == GeneralUser.id
@@ -775,18 +834,18 @@ def get_top_customers():
             Order.created <= end_date,
             Order.status == 'completed'
         ).group_by(
-            GeneralUser.id
+            GeneralUser.id, GeneralUser.first_name, GeneralUser.last_name
         ).order_by(
             db.func.sum(Order.charge).desc()
-        ).limit(10).all()
+        ).limit(10).all(), [])
         
         labels = []
         data = []
         
         for customer in top_customers:
-            name = f"{customer.first_name} {customer.last_name}".strip()
+            name = f"{customer.first_name or ''} {customer.last_name or ''}".strip() or 'Unknown'
             labels.append(name[:20] + '...' if len(name) > 20 else name)
-            data.append(convert_currency(float(customer.total_spent), 'USD', currency))
+            data.append(convert_currency(safe_float(customer.total_spent), 'USD', currency))
         
         chart_data = {
             'labels': labels,
@@ -802,22 +861,21 @@ def get_top_customers():
         return jsonify(chart_data)
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Failed to fetch top customers data', 'details': str(e)}), 500
 
 @app.route('/api/metrics/best-selling', methods=['GET'])
 @admin_required
 def get_best_selling():
     try:
-        period = request.args.get('period', 'weekly')
-        timezone = request.args.get('timezone', 'UTC')
+        period, currency, timezone = validate_request_params(request)
         
         start_date, end_date = get_date_range(period, timezone)
         
         # Get best selling services
-        best_selling = db.session.query(
+        best_selling = execute_query_safely(lambda: db.session.query(
             Order.service_id,
             db.func.count(Order.id).label('order_count'),
-            db.func.sum(Order.charge).label('total_revenue')
+            db.func.coalesce(db.func.sum(Order.charge), 0).label('total_revenue')
         ).filter(
             Order.created >= start_date,
             Order.created <= end_date,
@@ -826,14 +884,14 @@ def get_best_selling():
             Order.service_id
         ).order_by(
             db.func.count(Order.id).desc()
-        ).limit(10).all()
+        ).limit(10).all(), [])
         
         labels = []
         data = []
         
         for service in best_selling:
-            labels.append(f"Service {service.service_id}")
-            data.append(service.order_count)
+            labels.append(f"Service {service.service_id or 'Unknown'}")
+            data.append(safe_int(service.order_count))
         
         chart_data = {
             'labels': labels,
@@ -849,53 +907,53 @@ def get_best_selling():
         return jsonify(chart_data)
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Failed to fetch best selling data', 'details': str(e)}), 500
 
 @app.route('/api/metrics/rewards', methods=['GET'])
 @admin_required
 def get_rewards():
     try:
-        period = request.args.get('period', 'weekly')
-        currency = request.args.get('currency', 'USD')
-        timezone = request.args.get('timezone', 'UTC')
+        period, currency, timezone = validate_request_params(request)
         
         start_date, end_date = get_date_range(period, timezone)
         
         # Get bonus/reward transactions
-        rewards = db.session.query(
-            db.func.sum(GeneralTransactionLog.amount).label('total'),
+        rewards = execute_query_safely(lambda: db.session.query(
+            db.func.coalesce(db.func.sum(GeneralTransactionLog.amount), 0).label('total'),
             db.func.count(GeneralTransactionLog.id).label('count')
         ).filter(
             GeneralTransactionLog.created >= start_date,
             GeneralTransactionLog.created <= end_date,
             GeneralTransactionLog.type == 'bonus',
             GeneralTransactionLog.status == 1
-        ).first()
+        ).first())
         
-        total = float(rewards.total or 0)
+        if not rewards:
+            rewards = type('obj', (object,), {'total': 0, 'count': 0})
+        
+        total = safe_float(rewards.total)
         total_converted = convert_currency(total, 'USD', currency)
         
         return jsonify({
             'total': total_converted,
-            'count': rewards.count or 0
+            'count': safe_int(rewards.count)
         })
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Failed to fetch rewards data', 'details': str(e)}), 500
 
 @app.route('/api/metrics/ltv', methods=['GET'])
 @admin_required
 def get_ltv():
     try:
-        period = request.args.get('period', 'weekly')
-        currency = request.args.get('currency', 'USD')
-        timezone = request.args.get('timezone', 'UTC')
+        period, currency, timezone = validate_request_params(request)
         
         start_date, end_date = get_date_range(period, timezone)
         
         # Calculate average lifetime value
-        ltv_data = db.session.query(
-            db.func.avg(db.func.sum(Order.charge)).label('avg_ltv')
+        # First get user totals, then average them
+        user_totals = execute_query_safely(lambda: db.session.query(
+            db.func.coalesce(db.func.sum(Order.charge), 0).label('user_total')
         ).join(
             GeneralUser, db.cast(Order.uid, db.Integer) == GeneralUser.id
         ).filter(
@@ -904,9 +962,14 @@ def get_ltv():
             Order.status == 'completed'
         ).group_by(
             GeneralUser.id
-        ).first()
+        ).all(), [])
         
-        ltv = float(ltv_data.avg_ltv or 0) if ltv_data else 0
+        if user_totals:
+            total_ltv = sum(safe_float(user.user_total) for user in user_totals)
+            ltv = total_ltv / len(user_totals)
+        else:
+            ltv = 0
+        
         ltv_converted = convert_currency(ltv, 'USD', currency)
         
         return jsonify({
@@ -914,21 +977,19 @@ def get_ltv():
         })
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Failed to fetch LTV data', 'details': str(e)}), 500
 
 @app.route('/api/metrics/deposit-methods', methods=['GET'])
 @admin_required
 def get_deposit_methods():
     try:
-        period = request.args.get('period', 'weekly')
-        currency = request.args.get('currency', 'USD')
-        timezone = request.args.get('timezone', 'UTC')
+        period, currency, timezone = validate_request_params(request)
         
         start_date, end_date = get_date_range(period, timezone)
         
-        methods = db.session.query(
+        methods = execute_query_safely(lambda: db.session.query(
             GeneralTransactionLog.type,
-            db.func.sum(GeneralTransactionLog.amount).label('total'),
+            db.func.coalesce(db.func.sum(GeneralTransactionLog.amount), 0).label('total'),
             db.func.count(GeneralTransactionLog.id).label('count')
         ).filter(
             GeneralTransactionLog.created >= start_date,
@@ -937,7 +998,7 @@ def get_deposit_methods():
             GeneralTransactionLog.status == 1
         ).group_by(
             GeneralTransactionLog.type
-        ).all()
+        ).all(), [])
         
         labels = []
         data = []
@@ -950,8 +1011,8 @@ def get_deposit_methods():
         ]
         
         for i, method in enumerate(methods):
-            labels.append(method.type.title())
-            data.append(convert_currency(float(method.total), 'USD', currency))
+            labels.append((method.type or 'Unknown').title())
+            data.append(convert_currency(safe_float(method.total), 'USD', currency))
         
         chart_data = {
             'labels': labels,
@@ -966,18 +1027,17 @@ def get_deposit_methods():
         return jsonify(chart_data)
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Failed to fetch deposit methods data', 'details': str(e)}), 500
 
 @app.route('/api/metrics/orders/status-distribution', methods=['GET'])
 @admin_required
 def get_order_status_distribution():
     try:
-        period = request.args.get('period', 'weekly')
-        timezone = request.args.get('timezone', 'UTC')
+        period, currency, timezone = validate_request_params(request)
         
         start_date, end_date = get_date_range(period, timezone)
         
-        statuses = db.session.query(
+        statuses = execute_query_safely(lambda: db.session.query(
             Order.status,
             db.func.count(Order.id).label('count')
         ).filter(
@@ -985,7 +1045,7 @@ def get_order_status_distribution():
             Order.created <= end_date
         ).group_by(
             Order.status
-        ).all()
+        ).all(), [])
         
         labels = []
         data = []
@@ -998,8 +1058,8 @@ def get_order_status_distribution():
         ]
         
         for i, status in enumerate(statuses):
-            labels.append(status.status.title())
-            data.append(status.count)
+            labels.append((status.status or 'Unknown').title())
+            data.append(safe_int(status.count))
         
         chart_data = {
             'labels': labels,
@@ -1014,7 +1074,7 @@ def get_order_status_distribution():
         return jsonify(chart_data)
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Failed to fetch order status distribution data', 'details': str(e)}), 500
 
 # User search and details
 @app.route('/api/users/search', methods=['GET'])
@@ -1026,51 +1086,53 @@ def search_users():
         if len(query) < 2:
             return jsonify([])
         
-        users = GeneralUser.query.filter(
+        users = execute_query_safely(lambda: GeneralUser.query.filter(
             db.or_(
                 GeneralUser.first_name.like(f'%{query}%'),
                 GeneralUser.last_name.like(f'%{query}%'),
                 GeneralUser.email.like(f'%{query}%')
             )
-        ).limit(10).all()
+        ).limit(10).all(), [])
         
         results = []
         for user in users:
             results.append({
                 'id': user.id,
-                'first_name': user.first_name,
-                'last_name': user.last_name,
-                'email': user.email,
-                'balance': float(user.balance or 0),
-                'role': user.role
+                'first_name': user.first_name or '',
+                'last_name': user.last_name or '',
+                'email': user.email or '',
+                'balance': safe_float(user.balance),
+                'role': user.role or 'user'
             })
         
         return jsonify(results)
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Failed to search users', 'details': str(e)}), 500
 
 @app.route('/api/user/<int:user_id>/history', methods=['GET'])
 @admin_required
 def get_user_history(user_id):
     try:
-        user = GeneralUser.query.get_or_404(user_id)
+        user = GeneralUser.query.get(user_id)
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
         
         # Get user's orders
-        orders = Order.query.filter(
+        orders = execute_query_safely(lambda: Order.query.filter(
             db.cast(Order.uid, db.Integer) == user_id
-        ).order_by(Order.created.desc()).limit(10).all()
+        ).order_by(Order.created.desc()).limit(10).all(), [])
         
         # Get user's transactions
-        transactions = GeneralTransactionLog.query.filter_by(
+        transactions = execute_query_safely(lambda: GeneralTransactionLog.query.filter_by(
             uid=user_id
-        ).order_by(GeneralTransactionLog.created.desc()).limit(10).all()
+        ).order_by(GeneralTransactionLog.created.desc()).limit(10).all(), [])
         
         # Get top services
-        top_services = db.session.query(
+        top_services = execute_query_safely(lambda: db.session.query(
             Order.service_id,
             db.func.count(Order.id).label('count'),
-            db.func.sum(Order.charge).label('total_spent')
+            db.func.coalesce(db.func.sum(Order.charge), 0).label('total_spent')
         ).filter(
             db.cast(Order.uid, db.Integer) == user_id,
             Order.status == 'completed'
@@ -1078,62 +1140,62 @@ def get_user_history(user_id):
             Order.service_id
         ).order_by(
             db.func.sum(Order.charge).desc()
-        ).limit(5).all()
+        ).limit(5).all(), [])
         
         # Calculate stats
-        total_spent = db.session.query(
-            db.func.sum(Order.charge).label('total')
+        total_spent = execute_query_safely(lambda: db.session.query(
+            db.func.coalesce(db.func.sum(Order.charge), 0).label('total')
         ).filter(
             db.cast(Order.uid, db.Integer) == user_id,
             Order.status == 'completed'
-        ).first()
+        ).first())
         
-        total_orders = db.session.query(
+        total_orders = execute_query_safely(lambda: db.session.query(
             db.func.count(Order.id).label('total')
         ).filter(
             db.cast(Order.uid, db.Integer) == user_id
-        ).first()
+        ).first())
         
         result = {
             'profile': {
                 'id': user.id,
-                'first_name': user.first_name,
-                'last_name': user.last_name,
-                'email': user.email,
-                'role': user.role,
-                'balance': float(user.balance or 0),
-                'affiliate_bal_available': float(user.affiliate_bal_available or 0),
+                'first_name': user.first_name or '',
+                'last_name': user.last_name or '',
+                'email': user.email or '',
+                'role': user.role or 'user',
+                'balance': safe_float(user.balance),
+                'affiliate_bal_available': safe_float(user.affiliate_bal_available),
                 'created': user.created.isoformat() if user.created else None
             },
             'stats': {
-                'totalSpent': float(total_spent.total or 0),
-                'totalOrders': total_orders.total or 0
+                'totalSpent': safe_float(total_spent.total if total_spent else 0),
+                'totalOrders': safe_int(total_orders.total if total_orders else 0)
             },
             'recentOrders': [{
                 'id': order.id,
-                'service_id': order.service_id,
-                'charge': float(order.charge or 0),
-                'status': order.status,
+                'service_id': order.service_id or '',
+                'charge': safe_float(order.charge),
+                'status': order.status or 'unknown',
                 'created': order.created.isoformat() if order.created else None
             } for order in orders],
             'recentTransactions': [{
                 'id': transaction.id,
-                'type': transaction.type,
-                'amount': float(transaction.amount or 0),
-                'transaction_id': transaction.transaction_id,
+                'type': transaction.type or 'unknown',
+                'amount': safe_float(transaction.amount),
+                'transaction_id': transaction.transaction_id or '',
                 'created': transaction.created.isoformat() if transaction.created else None
             } for transaction in transactions],
             'topServices': [{
-                'service_id': service.service_id,
-                'count': service.count,
-                'total_spent': float(service.total_spent or 0)
+                'service_id': service.service_id or 'unknown',
+                'count': safe_int(service.count),
+                'total_spent': safe_float(service.total_spent)
             } for service in top_services]
         }
         
         return jsonify(result)
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Failed to fetch user history', 'details': str(e)}), 500
 
 # System notifications
 @app.route('/api/system/notifications', methods=['GET'])
@@ -1162,7 +1224,7 @@ def get_notifications():
         return jsonify(notifications)
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Failed to fetch notifications', 'details': str(e)}), 500
 
 if __name__ == '__main__':
     with app.app_context():

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { motion } from 'framer-motion'
 import { ArrowUpIcon, ArrowDownIcon, InformationCircleIcon } from '@heroicons/react/24/outline'
 
 const KPICard = ({ 
@@ -53,12 +54,22 @@ const KPICard = ({
   const ChangeIcon = change >= 0 ? ArrowUpIcon : ArrowDownIcon
 
   return (
-    <div className="card p-6 hover:shadow-lg transition-shadow duration-200">
+    <motion.div 
+      className="card p-6 hover:shadow-lg transition-all duration-300 hover:scale-105"
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5, ease: "easeOut" }}
+      whileHover={{ y: -2 }}
+    >
       <div className="flex items-center">
         <div className="flex-shrink-0">
-          <div className={`p-3 rounded-lg ${colorClasses[color]}`}>
+          <motion.div 
+            className={`p-3 rounded-lg ${colorClasses[color]}`}
+            whileHover={{ scale: 1.1, rotate: 5 }}
+            transition={{ duration: 0.2 }}
+          >
             <Icon className="h-6 w-6 text-white" />
-          </div>
+          </motion.div>
         </div>
         
         <div className="ml-5 w-0 flex-1">
@@ -69,27 +80,43 @@ const KPICard = ({
             {tooltip && (
               <div className="group relative">
                 <InformationCircleIcon className="h-4 w-4 text-gray-400 cursor-help" />
-                <div className="absolute bottom-full right-0 mb-2 hidden group-hover:block w-48 p-2 bg-gray-900 text-white text-xs rounded shadow-lg z-10">
+                <motion.div 
+                  className="absolute bottom-full right-0 mb-2 hidden group-hover:block w-48 p-2 bg-gray-900 text-white text-xs rounded shadow-lg z-10"
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ duration: 0.2 }}
+                >
                   {tooltip}
-                </div>
+                </motion.div>
               </div>
             )}
           </div>
           
-          <dd className="text-lg font-medium text-gray-900 dark:text-white">
+          <motion.dd 
+            className="text-lg font-medium text-gray-900 dark:text-white"
+            key={animatedValue}
+            initial={{ scale: 1.2, color: "#3b82f6" }}
+            animate={{ scale: 1, color: "inherit" }}
+            transition={{ duration: 0.3 }}
+          >
             {formatValue(animatedValue)}
-          </dd>
+          </motion.dd>
           
           {change !== undefined && (
-            <div className={`flex items-center text-sm ${changeColor}`}>
+            <motion.div 
+              className={`flex items-center text-sm ${changeColor}`}
+              initial={{ opacity: 0, x: -10 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: 0.2, duration: 0.3 }}
+            >
               <ChangeIcon className="h-4 w-4 mr-1" />
               <span>{Math.abs(change).toFixed(1)}%</span>
               <span className="ml-1 text-gray-500 dark:text-gray-400">vs last period</span>
-            </div>
+            </motion.div>
           )}
         </div>
       </div>
-    </div>
+    </motion.div>
   )
 }
 
