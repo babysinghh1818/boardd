@@ -12,7 +12,7 @@ import {
   ArcElement,
 } from 'chart.js'
 import { Line, Bar, Doughnut } from 'react-chartjs-2'
-import { ArrowDownTrayIcon } from '@heroicons/react/24/outline'
+import { ArrowDownTrayIcon, DocumentArrowDownIcon } from '@heroicons/react/24/outline'
 
 ChartJS.register(
   CategoryScale,
@@ -106,9 +106,34 @@ const ChartCard = ({ title, data, type = 'line', currency, height = 300 }) => {
     } : undefined
   }
 
-  const handleExport = () => {
-    // Export functionality would be implemented here
-    console.log('Exporting chart:', title)
+  const exportAsCSV = () => {
+    if (!data || !data.labels) return
+    
+    let csvContent = "data:text/csv;charset=utf-8,"
+    csvContent += "Label,Value\n"
+    
+    data.labels.forEach((label, index) => {
+      const value = data.datasets[0]?.data[index] || 0
+      csvContent += `"${label}",${value}\n`
+    })
+    
+    const encodedUri = encodeURI(csvContent)
+    const link = document.createElement("a")
+    link.setAttribute("href", encodedUri)
+    link.setAttribute("download", `${title.replace(/\s+/g, '_').toLowerCase()}.csv`)
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
+
+  const exportAsPNG = () => {
+    const canvas = document.querySelector(`#chart-${title.replace(/\s+/g, '-').toLowerCase()} canvas`)
+    if (canvas) {
+      const link = document.createElement('a')
+      link.download = `${title.replace(/\s+/g, '_').toLowerCase()}.png`
+      link.href = canvas.toDataURL()
+      link.click()
+    }
   }
 
   const renderChart = () => {
@@ -128,16 +153,25 @@ const ChartCard = ({ title, data, type = 'line', currency, height = 300 }) => {
     <div className="card p-6">
       <div className="flex justify-between items-center mb-4">
         <h3 className="text-lg font-medium text-gray-900 dark:text-white">{title}</h3>
-        <button
-          onClick={handleExport}
-          className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
-          title="Export Chart"
-        >
-          <ArrowDownTrayIcon className="h-5 w-5" />
-        </button>
+        <div className="flex space-x-2">
+          <button
+            onClick={exportAsCSV}
+            className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+            title="Export as CSV"
+          >
+            <DocumentArrowDownIcon className="h-5 w-5" />
+          </button>
+          <button
+            onClick={exportAsPNG}
+            className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+            title="Export as PNG"
+          >
+            <ArrowDownTrayIcon className="h-5 w-5" />
+          </button>
+        </div>
       </div>
       
-      <div style={{ height: `${height}px` }}>
+      <div id={`chart-${title.replace(/\s+/g, '-').toLowerCase()}`} style={{ height: `${height}px` }}>
         {renderChart()}
       </div>
     </div>

@@ -4,26 +4,26 @@ from flask_jwt_extended import JWTManager, jwt_required, create_access_token, ge
 from flask_cors import CORS
 from datetime import datetime, timedelta
 import bcrypt
-import os
-from dotenv import load_dotenv
 import requests
 import json
 from functools import wraps
 
-load_dotenv()
-
 app = Flask(__name__)
 
 # Configuration
-app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'mysql+pymysql://root:password@localhost/test_db')
+app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root:password@localhost/test_db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY', 'your-secret-key-change-this')
+app.config['JWT_SECRET_KEY'] = 'your-secret-key-change-this'
 app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=24)
 
 # Initialize extensions
 db = SQLAlchemy(app)
 jwt = JWTManager(app)
 CORS(app)
+
+# Exchange rate cache
+exchange_rate_cache = {}
+cache_timestamp = None
 
 # Models
 class GeneralUser(db.Model):
@@ -137,14 +137,27 @@ def get_date_range(period, timezone='UTC'):
     return start_date, end_date
 
 def convert_currency(amount, from_currency='USD', to_currency='USD'):
-    """Convert currency using exchange rate API"""
+    """Convert currency using exchange rate API with caching"""
+    global exchange_rate_cache, cache_timestamp
+    
     if from_currency == to_currency:
         return amount
     
+    # Check cache validity (1 hour)
+    if cache_timestamp and datetime.utcnow() - cache_timestamp < timedelta(hours=1):
+        if f"{from_currency}_{to_currency}" in exchange_rate_cache:
+            return amount * exchange_rate_cache[f"{from_currency}_{to_currency}"]
+    
     try:
-        # Use a free exchange rate API
-        response = requests.get(f'https://api.exchangerate-api.com/v4/latest/{from_currency}')
+        # Fetch new rates
+        response = requests.get(f'https://api.exchangerate-api.com/v4/latest/{from_currency}', timeout=5)
         rates = response.json()['rates']
+        
+        # Update cache
+        for currency, rate in rates.items():
+            exchange_rate_cache[f"{from_currency}_{currency}"] = rate
+        cache_timestamp = datetime.utcnow()
+        
         return amount * rates.get(to_currency, 1)
     except:
         return amount  # Return original amount if conversion fails
@@ -355,6 +368,76 @@ def get_signups():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/metrics/signup-to-deposit', methods=['GET'])
+@admin_required
+def get_signup_to_deposit():
+    try:
+        period = request.args.get('period', 'weekly')
+        timezone = request.args.get('timezone', 'UTC')
+        
+        start_date, end_date = get_date_range(period, timezone)
+        
+        # Users who signed up in period
+        signups = db.session.query(db.func.count(GeneralUser.id)).filter(
+            GeneralUser.created >= start_date,
+            GeneralUser.created <= end_date
+        ).scalar() or 0
+        
+        # Users who signed up and made deposits
+        depositors = db.session.query(db.func.count(db.distinct(GeneralTransactionLog.uid))).join(
+            GeneralUser, GeneralTransactionLog.uid == GeneralUser.id
+        ).filter(
+            GeneralUser.created >= start_date,
+            GeneralUser.created <= end_date,
+            GeneralTransactionLog.type != 'bonus',
+            GeneralTransactionLog.status == 1
+        ).scalar() or 0
+        
+        conversion_rate = (depositors / signups * 100) if signups > 0 else 0
+        
+        return jsonify({
+            'signups': signups,
+            'depositors': depositors,
+            'conversion_rate': conversion_rate
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/metrics/signup-to-order', methods=['GET'])
+@admin_required
+def get_signup_to_order():
+    try:
+        period = request.args.get('period', 'weekly')
+        timezone = request.args.get('timezone', 'UTC')
+        
+        start_date, end_date = get_date_range(period, timezone)
+        
+        # Users who signed up in period
+        signups = db.session.query(db.func.count(GeneralUser.id)).filter(
+            GeneralUser.created >= start_date,
+            GeneralUser.created <= end_date
+        ).scalar() or 0
+        
+        # Users who signed up and placed orders
+        orderers = db.session.query(db.func.count(db.distinct(db.cast(Order.uid, db.Integer)))).join(
+            GeneralUser, db.cast(Order.uid, db.Integer) == GeneralUser.id
+        ).filter(
+            GeneralUser.created >= start_date,
+            GeneralUser.created <= end_date
+        ).scalar() or 0
+        
+        conversion_rate = (orderers / signups * 100) if signups > 0 else 0
+        
+        return jsonify({
+            'signups': signups,
+            'orderers': orderers,
+            'conversion_rate': conversion_rate
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/metrics/revenue', methods=['GET'])
 @admin_required
 def get_revenue():
@@ -485,6 +568,36 @@ def get_profit():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/metrics/profit-margin', methods=['GET'])
+@admin_required
+def get_profit_margin():
+    try:
+        period = request.args.get('period', 'weekly')
+        timezone = request.args.get('timezone', 'UTC')
+        
+        start_date, end_date = get_date_range(period, timezone)
+        
+        # Get profit margin data
+        data = db.session.query(
+            db.func.sum(Order.profit).label('total_profit'),
+            db.func.sum(Order.charge).label('total_revenue')
+        ).filter(
+            Order.created >= start_date,
+            Order.created <= end_date,
+            Order.status == 'completed'
+        ).first()
+        
+        total_profit = float(data.total_profit or 0)
+        total_revenue = float(data.total_revenue or 0)
+        margin = (total_profit / total_revenue * 100) if total_revenue > 0 else 0
+        
+        return jsonify({
+            'margin': margin
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/metrics/orders/count', methods=['GET'])
 @admin_required
 def get_orders_count():
@@ -522,6 +635,34 @@ def get_orders_count():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/metrics/orders/average-charge', methods=['GET'])
+@admin_required
+def get_average_charge():
+    try:
+        period = request.args.get('period', 'weekly')
+        currency = request.args.get('currency', 'USD')
+        timezone = request.args.get('timezone', 'UTC')
+        
+        start_date, end_date = get_date_range(period, timezone)
+        
+        avg_charge = db.session.query(
+            db.func.avg(Order.charge).label('average')
+        ).filter(
+            Order.created >= start_date,
+            Order.created <= end_date,
+            Order.status == 'completed'
+        ).first()
+        
+        average = float(avg_charge.average or 0)
+        average_converted = convert_currency(average, 'USD', currency)
+        
+        return jsonify({
+            'average': average_converted
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/metrics/users/zero-balance', methods=['GET'])
 @admin_required
 def get_zero_balance_users():
@@ -535,6 +676,77 @@ def get_zero_balance_users():
         
         return jsonify({
             'zeroBalance': count.total or 0
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/metrics/users/affiliate-positive', methods=['GET'])
+@admin_required
+def get_affiliate_positive_users():
+    try:
+        count = db.session.query(
+            db.func.count(GeneralUser.id).label('total')
+        ).filter(
+            GeneralUser.affiliate_bal_available > 0,
+            GeneralUser.status == 1
+        ).first()
+        
+        return jsonify({
+            'affiliatePositive': count.total or 0
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/metrics/users/inactive', methods=['GET'])
+@admin_required
+def get_inactive_users():
+    try:
+        # Users with no activity in last 30 days
+        cutoff_date = datetime.utcnow() - timedelta(days=30)
+        
+        inactive_count = db.session.query(
+            db.func.count(GeneralUser.id).label('total')
+        ).filter(
+            db.or_(
+                GeneralUser.changed < cutoff_date,
+                GeneralUser.changed.is_(None)
+            ),
+            GeneralUser.status == 1
+        ).first()
+        
+        return jsonify({
+            'inactive': inactive_count.total or 0
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/metrics/average-deposit', methods=['GET'])
+@admin_required
+def get_average_deposit():
+    try:
+        period = request.args.get('period', 'weekly')
+        currency = request.args.get('currency', 'USD')
+        timezone = request.args.get('timezone', 'UTC')
+        
+        start_date, end_date = get_date_range(period, timezone)
+        
+        avg_deposit = db.session.query(
+            db.func.avg(GeneralTransactionLog.amount).label('average')
+        ).filter(
+            GeneralTransactionLog.created >= start_date,
+            GeneralTransactionLog.created <= end_date,
+            GeneralTransactionLog.type != 'bonus',
+            GeneralTransactionLog.status == 1
+        ).first()
+        
+        average = float(avg_deposit.average or 0)
+        average_converted = convert_currency(average, 'USD', currency)
+        
+        return jsonify({
+            'average': average_converted
         })
         
     except Exception as e:
@@ -588,6 +800,118 @@ def get_top_customers():
         }
         
         return jsonify(chart_data)
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/metrics/best-selling', methods=['GET'])
+@admin_required
+def get_best_selling():
+    try:
+        period = request.args.get('period', 'weekly')
+        timezone = request.args.get('timezone', 'UTC')
+        
+        start_date, end_date = get_date_range(period, timezone)
+        
+        # Get best selling services
+        best_selling = db.session.query(
+            Order.service_id,
+            db.func.count(Order.id).label('order_count'),
+            db.func.sum(Order.charge).label('total_revenue')
+        ).filter(
+            Order.created >= start_date,
+            Order.created <= end_date,
+            Order.status == 'completed'
+        ).group_by(
+            Order.service_id
+        ).order_by(
+            db.func.count(Order.id).desc()
+        ).limit(10).all()
+        
+        labels = []
+        data = []
+        
+        for service in best_selling:
+            labels.append(f"Service {service.service_id}")
+            data.append(service.order_count)
+        
+        chart_data = {
+            'labels': labels,
+            'datasets': [{
+                'label': 'Orders',
+                'data': data,
+                'backgroundColor': 'rgba(34, 197, 94, 0.8)',
+                'borderColor': 'rgb(34, 197, 94)',
+                'borderWidth': 1
+            }]
+        }
+        
+        return jsonify(chart_data)
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/metrics/rewards', methods=['GET'])
+@admin_required
+def get_rewards():
+    try:
+        period = request.args.get('period', 'weekly')
+        currency = request.args.get('currency', 'USD')
+        timezone = request.args.get('timezone', 'UTC')
+        
+        start_date, end_date = get_date_range(period, timezone)
+        
+        # Get bonus/reward transactions
+        rewards = db.session.query(
+            db.func.sum(GeneralTransactionLog.amount).label('total'),
+            db.func.count(GeneralTransactionLog.id).label('count')
+        ).filter(
+            GeneralTransactionLog.created >= start_date,
+            GeneralTransactionLog.created <= end_date,
+            GeneralTransactionLog.type == 'bonus',
+            GeneralTransactionLog.status == 1
+        ).first()
+        
+        total = float(rewards.total or 0)
+        total_converted = convert_currency(total, 'USD', currency)
+        
+        return jsonify({
+            'total': total_converted,
+            'count': rewards.count or 0
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/metrics/ltv', methods=['GET'])
+@admin_required
+def get_ltv():
+    try:
+        period = request.args.get('period', 'weekly')
+        currency = request.args.get('currency', 'USD')
+        timezone = request.args.get('timezone', 'UTC')
+        
+        start_date, end_date = get_date_range(period, timezone)
+        
+        # Calculate average lifetime value
+        ltv_data = db.session.query(
+            db.func.avg(db.func.sum(Order.charge)).label('avg_ltv')
+        ).join(
+            GeneralUser, db.cast(Order.uid, db.Integer) == GeneralUser.id
+        ).filter(
+            GeneralUser.created >= start_date,
+            GeneralUser.created <= end_date,
+            Order.status == 'completed'
+        ).group_by(
+            GeneralUser.id
+        ).first()
+        
+        ltv = float(ltv_data.avg_ltv or 0) if ltv_data else 0
+        ltv_converted = convert_currency(ltv, 'USD', currency)
+        
+        return jsonify({
+            'ltv': ltv_converted
+        })
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500

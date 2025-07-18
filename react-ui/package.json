@@ -1,72 +1,31 @@
 {
-    "name": "react-soft-ui-dashboard",
-    "version": "2.0.5",
-    "private": true,
-    "author": "Creative Tim & AppSeed",
-    "license": "See license in https://www.creative-tim.com/license",
-    "description": "Material UI version of Soft UI Dashboard by Creative Tim",
-    "build": {
-        "yarn": "14.15.0",
-        "npm": "14.15.0"
-    },     
-    "bugs": {
-        "url": "https://github.com/app-generator/react-soft-ui-dashboard/issues"
-    },
-    "repository": {
-        "type": "git",
-        "url": "git+https://github.com/app-generator/react-soft-ui-dashboard.git"
-    },
-    "dependencies": {
-        "@headlessui/react": "^1.7.17",
-        "@heroicons/react": "^2.0.18",
-        "@vitejs/plugin-react": "^4.0.3",
-        "axios": "^0.21.1",
-        "chart.js": "^4.4.0",
-        "date-fns": "^2.30.0",
-        "react": "^17.0.2",
-        "react-chartjs-2": "^5.2.0",
-        "react-dom": "^17.0.2",
-        "react-hot-toast": "^2.4.1",
-        "react-router-dom": "^5.2.0",
-        "vite": "^4.4.5"
-    },
-    "scripts": {
-        "dev": "vite",
-        "build": "vite build",
-        "preview": "vite preview",
-        "docker_pull": "docker-compose pull",
-        "docker_build": "docker-compose build",
-        "docker_up": "docker-compose up",
-        "docker": "yarn docker_pull & yarn docker_build & yarn docker_up",
-        "install:clean": "rm -rf node_modules/ && rm -rf package-lock.json && npm install && npm start"
-    },
-    "eslintConfig": {
-        "extends": [
-            "react-app",
-            "react-app/jest"
-        ]
-    },
-    "browserslist": {
-        "production": [
-            ">0.2%",
-            "not dead",
-            "not op_mini all"
-        ],
-        "development": [
-            "last 1 chrome version",
-            "last 1 firefox version",
-            "last 1 safari version"
-        ]
-    },
-    "devDependencies": {
-        "eslint": "^7.30.0",
-        "eslint-config-airbnb": "^18.2.1",
-        "eslint-config-prettier": "^8.3.0",
-        "eslint-plugin-import": "^2.23.4",
-        "eslint-plugin-jsx-a11y": "^6.4.1",
-        "eslint-plugin-prettier": "^3.4.0",
-        "eslint-plugin-react": "^7.24.0",
-        "eslint-plugin-react-hooks": "^4.2.0",
-        "prettier": "^2.3.2"
-    }
+  "name": "analytics-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@headlessui/react": "^1.7.17",
+    "@heroicons/react": "^2.0.18",
+    "axios": "^1.6.0",
+    "chart.js": "^4.4.0",
+    "react": "^18.2.0",
+    "react-chartjs-2": "^5.2.0",
+    "react-dom": "^18.2.0",
+    "react-hot-toast": "^2.4.1",
+    "react-router-dom": "^6.8.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.43",
+    "@types/react-dom": "^18.2.17",
+    "@vitejs/plugin-react": "^4.2.1",
+    "autoprefixer": "^10.4.16",
+    "postcss": "^8.4.32",
+    "tailwindcss": "^3.3.6",
+    "vite": "^5.0.8"
+  }
 }
