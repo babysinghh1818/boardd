@@ -10,7 +10,7 @@ from functools import wraps
 
 app = Flask(__name__)
 
-# Configuration
+# Hardcoded Configuration
 app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root:password@localhost/test_db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['JWT_SECRET_KEY'] = 'your-secret-key-change-this'
@@ -225,22 +225,26 @@ def admin_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
-# Error handlers
+# Global error handler
+@app.errorhandler(Exception)
+def handle_exception(e):
+    return jsonify({'error': 'Internal server error'}), 500
+
 @app.errorhandler(404)
 def not_found(error):
     return jsonify({'error': 'Endpoint not found'}), 404
 
-@app.errorhandler(500)
-def internal_error(error):
-    return jsonify({'error': 'Internal server error'}), 500
+@app.errorhandler(422)
+def unprocessable_entity(error):
+    return jsonify({'error': 'Invalid request data'}), 400
 
 # Authentication endpoints
 @app.route('/api/auth/login', methods=['POST'])
 def login():
     try:
-        data = request.get_json()
-        email = data.get('email')
-        password = data.get('password')
+        data = request.get_json() or {}
+        email = data.get('email', '').strip()
+        password = data.get('password', '')
         
         if not email or not password:
             return jsonify({'error': 'Email and password are required'}), 400
@@ -255,7 +259,7 @@ def login():
         
         # Check password - handle both bcrypt and test password
         password_valid = False
-        if user.password == '$2a$08$dummyhash' and password == 'testpassword':
+        if user.password == 'testpassword' and password == 'testpassword':
             password_valid = True
         elif user.password and user.password.startswith('$2a$'):
             try:
@@ -271,13 +275,13 @@ def login():
         return jsonify({
             'access_token': access_token,
             'user': {
-                'name': f"{user.first_name} {user.last_name}".strip(),
+                'name': f"{user.first_name or ''} {user.last_name or ''}".strip() or 'Admin',
                 'email': user.email
             }
         })
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Login failed'}), 500
 
 # Metrics endpoints
 @app.route('/api/metrics/deposits', methods=['GET'])
@@ -336,7 +340,7 @@ def get_deposits():
         })
         
     except Exception as e:
-        return jsonify({'error': 'Failed to fetch deposits data', 'details': str(e)}), 500
+        return jsonify({'error': 'Failed to fetch deposits data'}), 500
 
 @app.route('/api/metrics/sales', methods=['GET'])
 @admin_required
@@ -382,7 +386,7 @@ def get_sales():
         })
         
     except Exception as e:
-        return jsonify({'error': 'Failed to fetch sales data', 'details': str(e)}), 500
+        return jsonify({'error': 'Failed to fetch sales data'}), 500
 
 @app.route('/api/metrics/signups', methods=['GET'])
 @admin_required
@@ -418,7 +422,7 @@ def get_signups():
         })
         
     except Exception as e:
-        return jsonify({'error': 'Failed to fetch signups data', 'details': str(e)}), 500
+        return jsonify({'error': 'Failed to fetch signups data'}), 500
 
 @app.route('/api/metrics/signup-to-deposit', methods=['GET'])
 @admin_required
@@ -459,7 +463,7 @@ def get_signup_to_deposit():
         })
         
     except Exception as e:
-        return jsonify({'error': 'Failed to fetch signup-to-deposit data', 'details': str(e)}), 500
+        return jsonify({'error': 'Failed to fetch signup-to-deposit data'}), 500
 
 @app.route('/api/metrics/signup-to-order', methods=['GET'])
 @admin_required
@@ -498,7 +502,7 @@ def get_signup_to_order():
         })
         
     except Exception as e:
-        return jsonify({'error': 'Failed to fetch signup-to-order data', 'details': str(e)}), 500
+        return jsonify({'error': 'Failed to fetch signup-to-order data'}), 500
 
 @app.route('/api/metrics/revenue', methods=['GET'])
 @admin_required
@@ -571,7 +575,7 @@ def get_revenue():
         })
         
     except Exception as e:
-        return jsonify({'error': 'Failed to fetch revenue data', 'details': str(e)}), 500
+        return jsonify({'error': 'Failed to fetch revenue data'}), 500
 
 @app.route('/api/metrics/profit', methods=['GET'])
 @admin_required
@@ -630,7 +634,7 @@ def get_profit():
         })
         
     except Exception as e:
-        return jsonify({'error': 'Failed to fetch profit data', 'details': str(e)}), 500
+        return jsonify({'error': 'Failed to fetch profit data'}), 500
 
 @app.route('/api/metrics/profit-margin', methods=['GET'])
 @admin_required
@@ -662,7 +666,7 @@ def get_profit_margin():
         })
         
     except Exception as e:
-        return jsonify({'error': 'Failed to fetch profit margin data', 'details': str(e)}), 500
+        return jsonify({'error': 'Failed to fetch profit margin data'}), 500
 
 @app.route('/api/metrics/orders/count', methods=['GET'])
 @admin_required
@@ -698,7 +702,7 @@ def get_orders_count():
         })
         
     except Exception as e:
-        return jsonify({'error': 'Failed to fetch orders count data', 'details': str(e)}), 500
+        return jsonify({'error': 'Failed to fetch orders count data'}), 500
 
 @app.route('/api/metrics/orders/average-charge', methods=['GET'])
 @admin_required
@@ -724,7 +728,7 @@ def get_average_charge():
         })
         
     except Exception as e:
-        return jsonify({'error': 'Failed to fetch average charge data', 'details': str(e)}), 500
+        return jsonify({'error': 'Failed to fetch average charge data'}), 500
 
 @app.route('/api/metrics/users/zero-balance', methods=['GET'])
 @admin_required
@@ -742,7 +746,7 @@ def get_zero_balance_users():
         })
         
     except Exception as e:
-        return jsonify({'error': 'Failed to fetch zero balance users data', 'details': str(e)}), 500
+        return jsonify({'error': 'Failed to fetch zero balance users data'}), 500
 
 @app.route('/api/metrics/users/affiliate-positive', methods=['GET'])
 @admin_required
@@ -760,7 +764,7 @@ def get_affiliate_positive_users():
         })
         
     except Exception as e:
-        return jsonify({'error': 'Failed to fetch affiliate positive users data', 'details': str(e)}), 500
+        return jsonify({'error': 'Failed to fetch affiliate positive users data'}), 500
 
 @app.route('/api/metrics/users/inactive', methods=['GET'])
 @admin_required
@@ -784,7 +788,7 @@ def get_inactive_users():
         })
         
     except Exception as e:
-        return jsonify({'error': 'Failed to fetch inactive users data', 'details': str(e)}), 500
+        return jsonify({'error': 'Failed to fetch inactive users data'}), 500
 
 @app.route('/api/metrics/average-deposit', methods=['GET'])
 @admin_required
@@ -811,7 +815,7 @@ def get_average_deposit():
         })
         
     except Exception as e:
-        return jsonify({'error': 'Failed to fetch average deposit data', 'details': str(e)}), 500
+        return jsonify({'error': 'Failed to fetch average deposit data'}), 500
 
 @app.route('/api/metrics/top-customers', methods=['GET'])
 @admin_required
@@ -861,7 +865,7 @@ def get_top_customers():
         return jsonify(chart_data)
         
     except Exception as e:
-        return jsonify({'error': 'Failed to fetch top customers data', 'details': str(e)}), 500
+        return jsonify({'error': 'Failed to fetch top customers data'}), 500
 
 @app.route('/api/metrics/best-selling', methods=['GET'])
 @admin_required
@@ -907,7 +911,7 @@ def get_best_selling():
         return jsonify(chart_data)
         
     except Exception as e:
-        return jsonify({'error': 'Failed to fetch best selling data', 'details': str(e)}), 500
+        return jsonify({'error': 'Failed to fetch best selling data'}), 500
 
 @app.route('/api/metrics/rewards', methods=['GET'])
 @admin_required
@@ -940,7 +944,7 @@ def get_rewards():
         })
         
     except Exception as e:
-        return jsonify({'error': 'Failed to fetch rewards data', 'details': str(e)}), 500
+        return jsonify({'error': 'Failed to fetch rewards data'}), 500
 
 @app.route('/api/metrics/ltv', methods=['GET'])
 @admin_required
@@ -977,7 +981,7 @@ def get_ltv():
         })
         
     except Exception as e:
-        return jsonify({'error': 'Failed to fetch LTV data', 'details': str(e)}), 500
+        return jsonify({'error': 'Failed to fetch LTV data'}), 500
 
 @app.route('/api/metrics/deposit-methods', methods=['GET'])
 @admin_required
@@ -1027,7 +1031,7 @@ def get_deposit_methods():
         return jsonify(chart_data)
         
     except Exception as e:
-        return jsonify({'error': 'Failed to fetch deposit methods data', 'details': str(e)}), 500
+        return jsonify({'error': 'Failed to fetch deposit methods data'}), 500
 
 @app.route('/api/metrics/orders/status-distribution', methods=['GET'])
 @admin_required
@@ -1074,14 +1078,14 @@ def get_order_status_distribution():
         return jsonify(chart_data)
         
     except Exception as e:
-        return jsonify({'error': 'Failed to fetch order status distribution data', 'details': str(e)}), 500
+        return jsonify({'error': 'Failed to fetch order status distribution data'}), 500
 
 # User search and details
 @app.route('/api/users/search', methods=['GET'])
 @admin_required
 def search_users():
     try:
-        query = request.args.get('query', '')
+        query = request.args.get('query', '').strip()
         
         if len(query) < 2:
             return jsonify([])
@@ -1108,7 +1112,7 @@ def search_users():
         return jsonify(results)
         
     except Exception as e:
-        return jsonify({'error': 'Failed to search users', 'details': str(e)}), 500
+        return jsonify({'error': 'Failed to search users'}), 500
 
 @app.route('/api/user/<int:user_id>/history', methods=['GET'])
 @admin_required
@@ -1195,7 +1199,7 @@ def get_user_history(user_id):
         return jsonify(result)
         
     except Exception as e:
-        return jsonify({'error': 'Failed to fetch user history', 'details': str(e)}), 500
+        return jsonify({'error': 'Failed to fetch user history'}), 500
 
 # System notifications
 @app.route('/api/system/notifications', methods=['GET'])
@@ -1224,7 +1228,7 @@ def get_notifications():
         return jsonify(notifications)
         
     except Exception as e:
-        return jsonify({'error': 'Failed to fetch notifications', 'details': str(e)}), 500
+        return jsonify({'error': 'Failed to fetch notifications'}), 500
 
 if __name__ == '__main__':
     with app.app_context():

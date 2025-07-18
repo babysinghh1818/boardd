@@ -114,7 +114,7 @@ const Login = () => {
 
           <div className="text-center">
             <p className="text-xs text-gray-500 dark:text-gray-400">
-              Admin access only. Contact your administrator for credentials.
+              Admin access only. Use email: vreve123@gmail.com, password: testpassword
             </p>
           </div>
         </form>

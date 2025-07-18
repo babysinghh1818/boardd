@@ -32,28 +32,6 @@ const Dashboard = () => {
     try {
       // Load all metrics in parallel
       const promises = [
-        depositsRes,
-        salesRes,
-        signupsRes,
-        revenueRes,
-        profitRes,
-        ordersRes,
-        usersRes,
-        signupToDepositRes,
-        signupToOrderRes,
-        rewardsRes,
-        affiliateRes,
-        avgDepositRes,
-        avgChargeRes,
-        inactiveRes,
-        ltvRes,
-        topCustomersRes,
-        bestSellingRes,
-        depositMethodsRes,
-        orderStatusRes
-      ]
-      
-      const results = await Promise.allSettled([
         axios.get(`/api/metrics/deposits?period=${dateRange}&currency=${currency}&timezone=${timezone}`),
         axios.get(`/api/metrics/sales?period=${dateRange}&currency=${currency}&timezone=${timezone}`),
         axios.get(`/api/metrics/signups?period=${dateRange}&timezone=${timezone}`),
@@ -73,7 +51,9 @@ const Dashboard = () => {
         axios.get(`/api/metrics/best-selling?period=${dateRange}&timezone=${timezone}`),
         axios.get(`/api/metrics/deposit-methods?period=${dateRange}&currency=${currency}&timezone=${timezone}`),
         axios.get(`/api/metrics/orders/status-distribution?period=${dateRange}&timezone=${timezone}`)
-      ])
+      ]
+      
+      const results = await Promise.allSettled(promises)
 
       // Handle results with error checking
       const [
